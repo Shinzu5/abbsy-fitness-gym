@@ -63,10 +63,12 @@ export function verifySessionToken(token: string): SessionPayload | null {
 }
 
 export function sessionCookieOptions() {
+  const isProd = process.env.NODE_ENV === "production";
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    // Cross-site (Vercel frontend → API host) needs None + Secure in production
+    sameSite: (isProd ? "none" : "lax") as "none" | "lax",
+    secure: isProd,
     // Express cookie maxAge is milliseconds
     maxAge: DEFAULT_TTL_MS,
     path: "/",

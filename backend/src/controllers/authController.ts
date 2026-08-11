@@ -23,7 +23,12 @@ export async function login(req: Request, res: Response) {
 }
 
 export async function logout(_req: Request, res: Response) {
-  res.clearCookie(COOKIE_NAME, { path: "/" });
+  const opts = sessionCookieOptions();
+  res.clearCookie(COOKIE_NAME, {
+    path: opts.path,
+    sameSite: opts.sameSite,
+    secure: opts.secure,
+  });
   res.json({ ok: true });
 }
 
@@ -34,14 +39,23 @@ export async function me(req: Request, res: Response) {
     return;
   }
   const session = verifySessionToken(token);
+  const opts = sessionCookieOptions();
   if (!session) {
-    res.clearCookie(COOKIE_NAME, { path: "/" });
+    res.clearCookie(COOKIE_NAME, {
+      path: opts.path,
+      sameSite: opts.sameSite,
+      secure: opts.secure,
+    });
     res.status(401).json({ error: "Session expired" });
     return;
   }
   const user = await authService.getUserById(session.userId);
   if (!user) {
-    res.clearCookie(COOKIE_NAME, { path: "/" });
+    res.clearCookie(COOKIE_NAME, {
+      path: opts.path,
+      sameSite: opts.sameSite,
+      secure: opts.secure,
+    });
     res.status(401).json({ error: "Authentication required" });
     return;
   }

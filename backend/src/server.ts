@@ -25,11 +25,12 @@ app.use(
         callback(null, true);
         return;
       }
-      callback(new Error(`CORS blocked for origin: ${origin}`));
+      callback(null, false);
     },
     credentials: true,
   })
 );
+app.set("trust proxy", 1);
 app.use(cookieParser());
 app.use(express.json());
 
@@ -66,8 +67,8 @@ async function start() {
     process.exit(1);
   }
 
-  const server = app.listen(PORT, () => {
-    console.log(`ABBSY FITNESS GYM API running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`ABBSY FITNESS GYM API running on port ${PORT}`);
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {
