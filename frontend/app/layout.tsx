@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import AuthProvider from "@/components/AuthProvider";
 import AppShell from "@/components/AppShell";
 import ThemeProvider from "@/components/ThemeProvider";
@@ -7,6 +7,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ABBSY FITNESS GYM",
   description: "Gym management dashboard for ABBSY FITNESS GYM",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 const themeInitScript = `

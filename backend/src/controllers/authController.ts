@@ -12,8 +12,14 @@ export async function login(req: Request, res: Response) {
   const password = String(req.body?.password ?? "");
   const user = await authService.authenticateUser(username, password);
   const token = createSessionToken(user.id, user.username);
+  const session = verifySessionToken(token);
   res.cookie(COOKIE_NAME, token, sessionCookieOptions());
-  res.json({ id: user.id, username: user.username, token });
+  res.json({
+    id: user.id,
+    username: user.username,
+    token,
+    expiresAt: session?.exp ?? Date.now() + 60 * 60 * 1000,
+  });
 }
 
 export async function logout(_req: Request, res: Response) {
@@ -29,13 +35,19 @@ export async function me(req: Request, res: Response) {
   }
   const session = verifySessionToken(token);
   if (!session) {
-    res.status(401).json({ error: "Authentication required" });
+    res.clearCookie(COOKIE_NAME, { path: "/" });
+    res.status(401).json({ error: "Session expired" });
     return;
   }
   const user = await authService.getUserById(session.userId);
   if (!user) {
+    res.clearCookie(COOKIE_NAME, { path: "/" });
     res.status(401).json({ error: "Authentication required" });
     return;
   }
-  res.json({ id: user.id, username: user.username });
+  res.json({
+    id: user.id,
+    username: user.username,
+    expiresAt: session.exp,
+  });
 }

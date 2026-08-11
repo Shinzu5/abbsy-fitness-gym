@@ -14,9 +14,11 @@ const links = [
 export default function Sidebar({
   open,
   onClose,
+  onLogout,
 }: {
   open: boolean;
   onClose: () => void;
+  onLogout: () => void;
 }) {
   const pathname = usePathname();
 
@@ -44,6 +46,18 @@ export default function Sidebar({
           );
         })}
       </nav>
+      <div className="sidebar-footer">
+        <button
+          type="button"
+          className="btn btn-ghost logout-btn sidebar-logout"
+          onClick={() => {
+            onClose();
+            onLogout();
+          }}
+        >
+          Logout
+        </button>
+      </div>
     </aside>
   );
 }

@@ -1,5 +1,20 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
+export const AUTH_EXPIRED_EVENT = "abbsy:auth-expired";
+
+export type AuthUserResponse = {
+  id: number;
+  username: string;
+  expiresAt?: number;
+  token?: string;
+};
+
+function notifyAuthExpired() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -14,6 +29,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      path !== "/auth/login" &&
+      path !== "/auth/logout" &&
+      path !== "/auth/me"
+    ) {
+      notifyAuthExpired();
+    }
     const message =
       typeof data?.error === "string" ? data.error : "Request failed";
     throw new Error(message);
@@ -24,7 +47,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   login: (body: { username: string; password: string }) =>
-    request<{ id: number; username: string; token: string }>("/auth/login", {
+    request<AuthUserResponse & { token: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -32,7 +55,7 @@ export const api = {
     request<{ ok: true }>("/auth/logout", {
       method: "POST",
     }),
-  me: () => request<{ id: number; username: string }>("/auth/me"),
+  me: () => request<AuthUserResponse>("/auth/me"),
 
   getDashboard: () => request<import("@/types").DashboardStats>("/dashboard"),
 

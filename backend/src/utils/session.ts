@@ -1,9 +1,10 @@
 import crypto from "crypto";
 
 const COOKIE_NAME = "abbsy_session";
-const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** Session lifetime: 1 hour */
+const DEFAULT_TTL_MS = 60 * 60 * 1000;
 
-export { COOKIE_NAME };
+export { COOKIE_NAME, DEFAULT_TTL_MS };
 
 function getSecret(): string {
   const secret = process.env.SESSION_SECRET;
@@ -66,6 +67,7 @@ export function sessionCookieOptions() {
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
+    // Express cookie maxAge is milliseconds
     maxAge: DEFAULT_TTL_MS,
     path: "/",
   };

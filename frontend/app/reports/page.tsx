@@ -147,7 +147,7 @@ export default function ReportsPage() {
         ) : null}
         {selected ? (
           <>
-            <div className="grid-stats" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+            <div className="grid-stats grid-stats-3">
               <div className="stat-card">
                 <span>Report Date</span>
                 <strong>{formatDate(selected.report_date)}</strong>

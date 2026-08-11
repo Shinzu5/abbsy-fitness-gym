@@ -153,7 +153,7 @@ export default function PaymentsPage() {
         </div>
       ) : null}
 
-      <div className="grid-stats" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
+      <div className="grid-stats grid-stats-2">
         <StatCard label="Today's Sales (Open)" value={formatMoney(totalSales)} />
         <StatCard label="Open Transactions" value={transactionCount} />
       </div>

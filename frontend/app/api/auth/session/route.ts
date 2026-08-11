@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const COOKIE_NAME = "abbsy_session";
-const MAX_AGE = 7 * 24 * 60 * 60;
+/** Match backend session TTL: 1 hour (seconds for Next.js cookies) */
+const MAX_AGE = 60 * 60;
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
