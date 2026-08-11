@@ -71,6 +71,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  deleteMember: (id: number) =>
+    request<{
+      deleted: true;
+      member_id: number;
+      full_name: string;
+      memberships_deleted: number;
+    }>(`/members/${id}`, { method: "DELETE" }),
+  deleteMembership: (id: number) =>
+    request<{ deleted: true; membership_id: number; member_id: number }>(
+      `/memberships/${id}`,
+      { method: "DELETE" }
+    ),
 
   getReports: () => request<import("@/types").DailySalesReport[]>("/reports"),
   getReport: (id: number) =>

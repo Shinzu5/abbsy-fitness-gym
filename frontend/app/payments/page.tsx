@@ -231,7 +231,7 @@ export default function PaymentsPage() {
         <h3>Payment History (Today · Open)</h3>
         {loading ? <p className="loading">Loading payments...</p> : null}
         {!loading && payments.length === 0 ? (
-          <p className="empty">No open payments for today.</p>
+          <p className="empty">No payments yet</p>
         ) : null}
         {payments.length > 0 ? (
           <div className="table-wrap">

@@ -1,9 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import Alert from "@/components/Alert";
+import ConfirmModal from "@/components/ConfirmModal";
+import { useLiveData } from "@/components/LiveDataProvider";
 import { api } from "@/lib/api";
 import { formatDate, formatMoney } from "@/lib/format";
+import { notifyMembersChanged } from "@/lib/liveSync";
 import type { Member } from "@/types";
 
 const emptyForm = {
@@ -14,63 +17,39 @@ const emptyForm = {
 };
 
 export default function MembershipPage() {
+  const { members, loading, error, refresh } = useLiveData();
   const [form, setForm] = useState(emptyForm);
-  const [members, setMembers] = useState<Member[]>([]);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [success, setSuccess] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<Member | null>(null);
 
-  async function loadMembers() {
-    const data = await api.getMembers();
-    setMembers(data);
-  }
-
-  useEffect(() => {
-    let active = true;
-
-    async function init() {
-      try {
-        setLoading(true);
-        setError("");
-        await loadMembers();
-      } catch (err) {
-        if (active) {
-          setError(
-            err instanceof Error ? err.message : "Failed to load memberships"
-          );
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    init();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const membershipRows = useMemo(
+    () => members.filter((m) => m.membership_id != null),
+    [members]
+  );
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    setError("");
+    setActionError("");
     setSuccess("");
 
     const days = Number(form.duration_days);
     if (!form.user_name.trim()) {
-      setError("User name is required");
+      setActionError("User name is required");
       return;
     }
     if (!form.plan_type.trim()) {
-      setError("Plan type is required");
+      setActionError("Plan type is required");
       return;
     }
     if (!Number.isInteger(days) || days <= 0) {
-      setError("Number of days must be a positive whole number");
+      setActionError("Number of days must be a positive whole number");
       return;
     }
     if (!form.amount || Number(form.amount) <= 0) {
-      setError("Amount must be a valid positive number");
+      setActionError("Amount must be a valid positive number");
       return;
     }
 
@@ -84,16 +63,37 @@ export default function MembershipPage() {
         amount: form.amount,
       });
       setForm(emptyForm);
-      await loadMembers();
+      await refresh(false);
+      notifyMembersChanged();
       setSuccess(
         "Member registered. One payment was added to today's Payments."
       );
     } catch (err) {
-      setError(
+      setActionError(
         err instanceof Error ? err.message : "Failed to register membership"
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete?.membership_id) return;
+
+    try {
+      setDeleting(true);
+      setActionError("");
+      await api.deleteMembership(pendingDelete.membership_id);
+      setPendingDelete(null);
+      await refresh(false);
+      notifyMembersChanged();
+      setSuccess("Membership deleted. Member and payment history were kept.");
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Failed to delete membership"
+      );
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -109,7 +109,7 @@ export default function MembershipPage() {
         </div>
       </div>
 
-      <Alert type="error" message={error} />
+      <Alert type="error" message={actionError || error} />
       <Alert type="success" message={success} />
 
       <div className="panel">
@@ -123,7 +123,7 @@ export default function MembershipPage() {
                 onChange={(e) =>
                   setForm((p) => ({ ...p, user_name: e.target.value }))
                 }
-                placeholder="John Doe"
+                placeholder="Full name"
                 required
               />
             </label>
@@ -134,7 +134,7 @@ export default function MembershipPage() {
                 onChange={(e) =>
                   setForm((p) => ({ ...p, plan_type: e.target.value }))
                 }
-                placeholder="Monthly"
+                placeholder="Plan type"
                 required
               />
             </label>
@@ -148,7 +148,7 @@ export default function MembershipPage() {
                 onChange={(e) =>
                   setForm((p) => ({ ...p, duration_days: e.target.value }))
                 }
-                placeholder="30"
+                placeholder="Days"
                 required
               />
             </label>
@@ -162,7 +162,7 @@ export default function MembershipPage() {
                 onChange={(e) =>
                   setForm((p) => ({ ...p, amount: e.target.value }))
                 }
-                placeholder="350.00"
+                placeholder="Amount"
                 required
               />
             </label>
@@ -178,10 +178,10 @@ export default function MembershipPage() {
       <div className="panel">
         <h3>Registered Memberships</h3>
         {loading ? <p className="loading">Loading memberships...</p> : null}
-        {!loading && members.length === 0 ? (
-          <p className="empty">No memberships registered yet.</p>
+        {!loading && membershipRows.length === 0 ? (
+          <p className="empty">No memberships yet</p>
         ) : null}
-        {members.length > 0 ? (
+        {membershipRows.length > 0 ? (
           <div className="table-wrap">
             <table>
               <thead>
@@ -193,11 +193,12 @@ export default function MembershipPage() {
                   <th>Expiration</th>
                   <th>Days Remaining</th>
                   <th>Status</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {members.map((member) => (
-                  <tr key={member.id}>
+                {membershipRows.map((member) => (
+                  <tr key={`${member.id}-${member.membership_id}`}>
                     <td>{member.full_name}</td>
                     <td>{member.plan_type || "—"}</td>
                     <td>{formatMoney(member.amount_paid)}</td>
@@ -221,6 +222,18 @@ export default function MembershipPage() {
                             : member.status}
                       </span>
                     </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-danger"
+                        onClick={() => {
+                          setSuccess("");
+                          setPendingDelete(member);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -228,6 +241,19 @@ export default function MembershipPage() {
           </div>
         ) : null}
       </div>
+
+      <ConfirmModal
+        open={pendingDelete != null}
+        title="Delete this membership?"
+        message="Are you sure you want to delete this membership? The member and payment history will be kept."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        confirming={deleting}
+        onCancel={() => {
+          if (!deleting) setPendingDelete(null);
+        }}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

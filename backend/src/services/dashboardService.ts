@@ -1,11 +1,10 @@
 import { prisma } from "../db/prisma";
 import { DashboardStats } from "../types";
-import { getBusinessDate, getManilaDayRange } from "../utils/dates";
+import { calculateRemainingDays, getManilaDayRange } from "../utils/dates";
 import { toMoneyString } from "../utils/money";
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-  const businessDate = getBusinessDate();
-  const { start, end } = getManilaDayRange(businessDate);
+  const { start, end } = getManilaDayRange();
 
   const [salesAgg, activePlans, members] = await Promise.all([
     prisma.payment.aggregate({
@@ -35,7 +34,8 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     const latest = member.memberships[0];
     if (!latest) continue;
     const expiration = latest.expirationDate.toISOString().slice(0, 10);
-    if (expiration >= businessDate) active_members += 1;
+    const remaining = calculateRemainingDays(expiration);
+    if (remaining > 0) active_members += 1;
     else expired_members += 1;
   }
 

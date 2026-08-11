@@ -18,6 +18,7 @@ function mapMember(row: {
   contactNumber: string;
   registeredAt: Date;
   memberships: Array<{
+    id: number;
     startDate: Date;
     expirationDate: Date;
     amountPaid: Prisma.Decimal;
@@ -42,6 +43,7 @@ function mapMember(row: {
     full_name: row.fullName,
     contact_number: row.contactNumber,
     registered_at: row.registeredAt.toISOString(),
+    membership_id: latest?.id ?? null,
     plan_name: latest?.plan?.name ?? null,
     plan_type: latest?.plan?.type ?? null,
     start_date: startDate,
@@ -223,4 +225,82 @@ export async function registerMember(input: {
   });
 
   return getMemberById(memberId);
+}
+
+/**
+ * Manually delete ONE membership row only.
+ * Never deletes the member, payments, or reports.
+ */
+export async function deleteMembership(membershipId: number): Promise<{
+  deleted: true;
+  membership_id: number;
+  member_id: number;
+}> {
+  if (!Number.isInteger(membershipId) || membershipId <= 0) {
+    throw new AppError("Invalid membership id", 400);
+  }
+
+  const membership = await prisma.membership.findUnique({
+    where: { id: membershipId },
+    select: { id: true, memberId: true },
+  });
+
+  if (!membership) {
+    throw new AppError("Membership not found", 404);
+  }
+
+  await prisma.membership.delete({
+    where: { id: membership.id },
+  });
+
+  return {
+    deleted: true,
+    membership_id: membership.id,
+    member_id: membership.memberId,
+  };
+}
+
+/**
+ * Permanently delete a member from Neon.
+ * - Deletes all membership rows for that member
+ * - Keeps payments (memberId set null) and reports intact
+ */
+export async function deleteMember(memberId: number): Promise<{
+  deleted: true;
+  member_id: number;
+  full_name: string;
+  memberships_deleted: number;
+}> {
+  if (!Number.isInteger(memberId) || memberId <= 0) {
+    throw new AppError("Invalid member id", 400);
+  }
+
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: { id: true, fullName: true },
+  });
+
+  if (!member) {
+    throw new AppError("Member not found", 404);
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const memberships = await tx.membership.deleteMany({
+      where: { memberId: member.id },
+    });
+
+    // Payments keep customer_name; FK memberId becomes null (onDelete: SetNull)
+    await tx.member.delete({
+      where: { id: member.id },
+    });
+
+    return memberships.count;
+  });
+
+  return {
+    deleted: true,
+    member_id: member.id,
+    full_name: member.fullName,
+    memberships_deleted: result,
+  };
 }

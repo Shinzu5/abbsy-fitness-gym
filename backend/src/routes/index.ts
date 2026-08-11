@@ -44,6 +44,14 @@ router.post(
   validateBody(registerMemberSchema),
   asyncHandler(memberController.createMember)
 );
+router.delete(
+  "/members/:id",
+  asyncHandler(memberController.deleteMember)
+);
+router.delete(
+  "/memberships/:id",
+  asyncHandler(memberController.deleteMembership)
+);
 
 router.get("/reports", asyncHandler(reportController.getReports));
 router.get("/reports/:id", asyncHandler(reportController.getReportById));

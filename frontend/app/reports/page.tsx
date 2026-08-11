@@ -90,7 +90,7 @@ export default function ReportsPage() {
         </p>
         {loading ? <p className="loading">Loading reports...</p> : null}
         {!loading && reports.length === 0 ? (
-          <p className="empty">No closed daily sales reports yet.</p>
+          <p className="empty">No reports yet</p>
         ) : null}
         {reports.length > 0 ? (
           <div className="report-list">

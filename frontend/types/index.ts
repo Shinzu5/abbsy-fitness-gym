@@ -42,6 +42,7 @@ export interface Member {
   full_name: string;
   contact_number: string;
   registered_at: string;
+  membership_id: number | null;
   plan_name: string | null;
   plan_type: string | null;
   start_date: string | null;

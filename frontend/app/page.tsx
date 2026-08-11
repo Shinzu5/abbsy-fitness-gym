@@ -1,49 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Alert from "@/components/Alert";
+import { useLiveData } from "@/components/LiveDataProvider";
 import StatCard from "@/components/StatCard";
-import { api } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
-import type { DashboardStats } from "@/types";
-
-const emptyStats: DashboardStats = {
-  today_sales: "0.00",
-  today_transaction_count: 0,
-  active_members: 0,
-  expired_members: 0,
-  active_membership_plans: 0,
-};
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStats>(emptyStats);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-
-    async function load() {
-      try {
-        setLoading(true);
-        setError("");
-        const data = await api.getDashboard();
-        if (active) setStats(data);
-      } catch (err) {
-        if (active) {
-          setError(err instanceof Error ? err.message : "Failed to load dashboard");
-          setStats(emptyStats);
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
+  const { stats, loading, error } = useLiveData();
 
   return (
     <div>
