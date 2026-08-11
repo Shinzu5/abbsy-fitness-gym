@@ -1,12 +1,17 @@
 import { prisma } from "../db/prisma";
 import { DashboardStats } from "../types";
-import { calculateRemainingDays, getManilaDayRange } from "../utils/dates";
+import {
+  calculateRemainingDays,
+  formatDateOnly,
+  getManilaDayRange,
+  membershipStatusFromExpiration,
+} from "../utils/dates";
 import { toMoneyString } from "../utils/money";
 
 export async function getDashboardStats(): Promise<DashboardStats> {
   const { start, end } = getManilaDayRange();
 
-  const [salesAgg, activePlans, members] = await Promise.all([
+  const [salesAgg, members] = await Promise.all([
     prisma.payment.aggregate({
       where: {
         status: "OPEN",
@@ -15,13 +20,12 @@ export async function getDashboardStats(): Promise<DashboardStats> {
       _sum: { amount: true },
       _count: { _all: true },
     }),
-    prisma.membershipPlan.count({ where: { active: true } }),
     prisma.member.findMany({
       include: {
         memberships: {
           orderBy: [{ expirationDate: "desc" }, { id: "desc" }],
           take: 1,
-          select: { expirationDate: true },
+          select: { expirationDate: true, planId: true },
         },
       },
     }),
@@ -29,14 +33,21 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
   let active_members = 0;
   let expired_members = 0;
+  const activePlanIds = new Set<number>();
 
   for (const member of members) {
     const latest = member.memberships[0];
     if (!latest) continue;
-    const expiration = latest.expirationDate.toISOString().slice(0, 10);
+    const expiration = formatDateOnly(latest.expirationDate);
+    const status = membershipStatusFromExpiration(expiration);
     const remaining = calculateRemainingDays(expiration);
-    if (remaining > 0) active_members += 1;
-    else expired_members += 1;
+    if (status === "Expired" || remaining <= 0) {
+      expired_members += 1;
+    } else {
+      // Active + ExpiringSoon still count as active memberships
+      active_members += 1;
+      activePlanIds.add(latest.planId);
+    }
   }
 
   return {
@@ -44,6 +55,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     today_transaction_count: salesAgg._count._all,
     active_members,
     expired_members,
-    active_membership_plans: activePlans,
+    active_membership_plans: activePlanIds.size,
   };
 }

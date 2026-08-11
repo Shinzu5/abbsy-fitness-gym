@@ -15,7 +15,12 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { notifyMembersChanged } from "@/lib/liveSync";
 import type { Member } from "@/types";
 
-type StatusFilter = "ALL" | "ACTIVE" | "EXPIRED";
+type StatusFilter = "ALL" | "ACTIVE" | "EXPIRED" | "EXPIRING_SOON";
+
+const RENEW_OPTIONS = [
+  { label: "15 days", days: 15 },
+  { label: "Monthly", days: 30 },
+] as const;
 
 function isExpiringSoon(status: LiveMembershipStatus): boolean {
   return status === "ExpiringSoon";
@@ -70,20 +75,31 @@ function matchesFilter(
   filter: StatusFilter
 ): boolean {
   if (filter === "ALL") return true;
-  if (filter === "ACTIVE") {
-    return liveStatus === "Active" || liveStatus === "ExpiringSoon";
-  }
+  if (filter === "ACTIVE") return liveStatus === "Active";
+  if (filter === "EXPIRING_SOON") return liveStatus === "ExpiringSoon";
   return liveStatus === "Expired";
 }
 
+function filterLabel(value: StatusFilter): string {
+  if (value === "EXPIRING_SOON") return "EXPIRING SOON";
+  return value;
+}
+
 export default function MembersPage() {
-  const { members, now, loading, error, refresh } = useLiveData();
+  const { members, now, loading, error, refresh, setMembers } = useLiveData();
   const [success, setSuccess] = useState("");
   const [actionError, setActionError] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("ALL");
   const [search, setSearch] = useState("");
   const [pendingDelete, setPendingDelete] = useState<Member | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [renewMode, setRenewMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [renewDays, setRenewDays] = useState("15");
+  const [renewAmount, setRenewAmount] = useState("");
+  const [renewConfirmOpen, setRenewConfirmOpen] = useState(false);
+  const [renewing, setRenewing] = useState(false);
 
   const visibleMembers = useMemo(() => {
     return members.filter((member) => {
@@ -92,6 +108,92 @@ export default function MembersPage() {
     });
   }, [members, filter, search, now]);
 
+  const selectedMembers = useMemo(
+    () => members.filter((m) => selectedIds.includes(m.id)),
+    [members, selectedIds]
+  );
+
+  function exitRenewMode() {
+    setRenewMode(false);
+    setSelectedIds([]);
+    setRenewDays("15");
+    setRenewAmount("");
+    setRenewConfirmOpen(false);
+  }
+
+  function toggleSelected(id: number) {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function toggleSelectAllVisible() {
+    const visibleIds = visibleMembers.map((m) => m.id);
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds((prev) =>
+        Array.from(new Set([...prev, ...visibleIds]))
+      );
+    }
+  }
+
+  function startRenew() {
+    setSuccess("");
+    setActionError("");
+    setRenewMode(true);
+    setSelectedIds([]);
+    setRenewDays("15");
+    setRenewAmount("");
+  }
+
+  function requestRenewConfirm() {
+    setActionError("");
+    if (selectedIds.length === 0) {
+      setActionError("Select at least one member to renew");
+      return;
+    }
+    if (!renewDays || ![15, 30].includes(Number(renewDays))) {
+      setActionError("Choose 15 days or Monthly");
+      return;
+    }
+    if (!renewAmount || Number(renewAmount) <= 0) {
+      setActionError("Amount must be a valid positive number");
+      return;
+    }
+    setRenewConfirmOpen(true);
+  }
+
+  async function confirmRenew() {
+    try {
+      setRenewing(true);
+      setActionError("");
+      setSuccess("");
+      const updated = await api.renewMembers({
+        member_ids: selectedIds,
+        duration_days: Number(renewDays),
+        amount: renewAmount,
+      });
+      setMembers((prev) => {
+        const map = new Map(updated.map((m) => [m.id, m]));
+        return prev.map((m) => map.get(m.id) ?? m);
+      });
+      await refresh(false);
+      notifyMembersChanged();
+      exitRenewMode();
+      setSuccess(
+        `Renewed ${updated.length} member${updated.length === 1 ? "" : "s"}. Days added to their plan.`
+      );
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Failed to renew");
+      setRenewConfirmOpen(false);
+    } finally {
+      setRenewing(false);
+    }
+  }
+
   async function confirmDeleteMember() {
     if (!pendingDelete) return;
 
@@ -99,8 +201,10 @@ export default function MembersPage() {
       setDeleting(true);
       setActionError("");
       setSuccess("");
-      await api.deleteMember(pendingDelete.id);
+      const deletedId = pendingDelete.id;
+      await api.deleteMember(deletedId);
       setPendingDelete(null);
+      setMembers((prev) => prev.filter((m) => m.id !== deletedId));
       await refresh(false);
       notifyMembersChanged();
       setSuccess("Member deleted. Payment and report history were kept.");
@@ -112,6 +216,10 @@ export default function MembersPage() {
       setDeleting(false);
     }
   }
+
+  const allVisibleSelected =
+    visibleMembers.length > 0 &&
+    visibleMembers.every((m) => selectedIds.includes(m.id));
 
   return (
     <div>
@@ -132,14 +240,16 @@ export default function MembersPage() {
 
         <div className="members-toolbar">
           <div className="filter-group" role="group" aria-label="Member status filters">
-            {(["ALL", "ACTIVE", "EXPIRED"] as StatusFilter[]).map((value) => (
+            {(
+              ["ALL", "ACTIVE", "EXPIRING_SOON", "EXPIRED"] as StatusFilter[]
+            ).map((value) => (
               <button
                 key={value}
                 type="button"
                 className={`filter-btn${filter === value ? " active" : ""}`}
                 onClick={() => setFilter(value)}
               >
-                {value}
+                {filterLabel(value)}
               </button>
             ))}
           </div>
@@ -159,8 +269,67 @@ export default function MembersPage() {
             >
               Search
             </button>
+            {!renewMode ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={startRenew}
+                disabled={members.length === 0}
+              >
+                Renew
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={exitRenewMode}
+                disabled={renewing}
+              >
+                Cancel
+              </button>
+            )}
           </div>
         </div>
+
+        {renewMode ? (
+          <div className="renew-bar">
+            <label>
+              Renew for
+              <select
+                value={renewDays}
+                onChange={(e) => setRenewDays(e.target.value)}
+              >
+                {RENEW_OPTIONS.map((opt) => (
+                  <option key={opt.days} value={opt.days}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Amount
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={renewAmount}
+                onChange={(e) => setRenewAmount(e.target.value)}
+                placeholder="Amount"
+              />
+            </label>
+            <span className="renew-selected">
+              {selectedIds.length} selected
+            </span>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={requestRenewConfirm}
+              disabled={renewing}
+            >
+              Confirm Renew
+            </button>
+          </div>
+        ) : null}
 
         {loading ? <p className="loading">Loading members...</p> : null}
         {!loading && members.length === 0 ? (
@@ -175,6 +344,16 @@ export default function MembersPage() {
             <table>
               <thead>
                 <tr>
+                  {renewMode ? (
+                    <th className="renew-check-col">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        aria-label="Select all visible members"
+                      />
+                    </th>
+                  ) : null}
                   <th>User Name</th>
                   <th>Plan Type</th>
                   <th>Amount Paid</th>
@@ -204,6 +383,16 @@ export default function MembersPage() {
                         isExpiringSoon(liveStatus) ? "row-expiring" : undefined
                       }
                     >
+                      {renewMode ? (
+                        <td className="renew-check-col">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(member.id)}
+                            onChange={() => toggleSelected(member.id)}
+                            aria-label={`Select ${member.full_name}`}
+                          />
+                        </td>
+                      ) : null}
                       <td>
                         <div className="member-name-cell">
                           <span>{member.full_name}</span>
@@ -244,6 +433,7 @@ export default function MembersPage() {
                             setSuccess("");
                             setPendingDelete(member);
                           }}
+                          disabled={renewMode}
                         >
                           Delete
                         </button>
@@ -275,12 +465,48 @@ export default function MembersPage() {
           </>
         }
         confirmLabel="Delete"
+        confirmingLabel="Deleting..."
         cancelLabel="Cancel"
         confirming={deleting}
         onCancel={() => {
           if (!deleting) setPendingDelete(null);
         }}
         onConfirm={confirmDeleteMember}
+      />
+
+      <ConfirmModal
+        open={renewConfirmOpen}
+        title="Confirm renewal?"
+        message={
+          <>
+            <p style={{ marginTop: 0 }}>
+              Add{" "}
+              <strong>
+                {Number(renewDays) === 30 ? "Monthly (1 month)" : "15 days"}
+              </strong>{" "}
+              to {selectedMembers.length} member
+              {selectedMembers.length === 1 ? "" : "s"} for{" "}
+              <strong>{formatMoney(renewAmount)}</strong> each:
+            </p>
+            <ul style={{ marginBottom: 0, paddingLeft: 18 }}>
+              {selectedMembers.slice(0, 8).map((m) => (
+                <li key={m.id}>{m.full_name}</li>
+              ))}
+              {selectedMembers.length > 8 ? (
+                <li>…and {selectedMembers.length - 8} more</li>
+              ) : null}
+            </ul>
+          </>
+        }
+        confirmLabel="Renew"
+        confirmingLabel="Renewing..."
+        cancelLabel="Cancel"
+        confirmClassName="btn btn-primary"
+        confirming={renewing}
+        onCancel={() => {
+          if (!renewing) setRenewConfirmOpen(false);
+        }}
+        onConfirm={confirmRenew}
       />
     </div>
   );

@@ -27,6 +27,11 @@ export const createPaymentSchema = z.object({
   member_id: z.number().int().positive().optional().nullable(),
 });
 
+export const loginSchema = z.object({
+  username: z.string().trim().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
 export const createMembershipPlanSchema = z.object({
   name: z.string().trim().min(1, "Plan name is required"),
   type: z.string().trim().min(1, "Plan type is required"),
@@ -44,12 +49,15 @@ export const registerMemberSchema = z
     full_name: z.string().trim().optional(),
     plan_type: z.string().trim().min(1, "Plan type is required"),
     duration_days: z.coerce
-      .number({ invalid_type_error: "Number of days must be a number" })
-      .int("Number of days must be a whole number")
-      .positive("Number of days must be greater than 0"),
+      .number({ invalid_type_error: "Days must be a number" })
+      .int("Days must be a whole number")
+      .positive("Days must be greater than 0"),
     amount: positiveAmount,
     contact_number: z.string().trim().optional().nullable(),
-    registration_date: z.string().optional().nullable(),
+    registration_date: z
+      .string({ required_error: "Start date is required" })
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Start date must be a valid date"),
   })
   .superRefine((data, ctx) => {
     const name = (data.user_name || data.full_name || "").trim();
@@ -60,6 +68,15 @@ export const registerMemberSchema = z
         path: ["user_name"],
       });
     }
+    const start = data.registration_date.slice(0, 10);
+    const parsed = new Date(`${start}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== start) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Start date must be a valid date",
+        path: ["registration_date"],
+      });
+    }
   })
   .transform((data) => ({
     full_name: (data.user_name || data.full_name || "").trim(),
@@ -67,5 +84,18 @@ export const registerMemberSchema = z
     duration_days: data.duration_days,
     amount: data.amount,
     contact_number: data.contact_number?.trim() || "-",
-    registration_date: data.registration_date ?? null,
+    registration_date: data.registration_date.slice(0, 10),
   }));
+
+export const renewMembersSchema = z.object({
+  member_ids: z
+    .array(z.coerce.number().int().positive())
+    .min(1, "Select at least one member to renew"),
+  duration_days: z.coerce
+    .number({ invalid_type_error: "Days must be a number" })
+    .int("Days must be a whole number")
+    .refine((v) => v === 15 || v === 30, {
+      message: "Days must be 15 or 30",
+    }),
+  amount: positiveAmount,
+});

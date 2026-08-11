@@ -1,13 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import LiveDataProvider from "./LiveDataProvider";
 import NotificationBell from "./NotificationBell";
 import Sidebar from "./Sidebar";
 import ThemeToggle from "./ThemeToggle";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const isLoginPage = pathname === "/login";
+
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   return (
     <LiveDataProvider>

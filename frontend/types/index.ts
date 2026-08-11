@@ -48,7 +48,7 @@ export interface Member {
   start_date: string | null;
   expiration_date: string | null;
   remaining_days: number;
-  status: "Active" | "Expired" | "None";
+  status: "Active" | "ExpiringSoon" | "Expired" | "None";
   amount_paid: string | null;
 }
 

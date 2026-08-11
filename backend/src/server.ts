@@ -1,3 +1,4 @@
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
@@ -9,8 +10,27 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
+const frontendOrigins = (
+  process.env.FRONTEND_ORIGIN || "http://localhost:3000,http://localhost:3001"
+)
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
-app.use(cors());
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow non-browser tools (no Origin) and configured frontend origins
+      if (!origin || frontendOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
+app.use(cookieParser());
 app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
@@ -26,6 +46,13 @@ async function start() {
   if (!databaseUrl || databaseUrl === "PUT_NEON_CONNECTION_STRING_HERE") {
     console.error(
       "DATABASE_URL is missing. Set your Neon connection string in backend/.env"
+    );
+    process.exit(1);
+  }
+
+  if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 16) {
+    console.error(
+      "SESSION_SECRET is missing or too short. Set a long secret in backend/.env"
     );
     process.exit(1);
   }

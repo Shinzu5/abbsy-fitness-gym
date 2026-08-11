@@ -12,6 +12,11 @@ export async function createMember(req: Request, res: Response) {
   res.status(201).json(member);
 }
 
+export async function renewMembers(req: Request, res: Response) {
+  const members = await memberService.renewMembers(req.body);
+  res.status(200).json(members);
+}
+
 export async function deleteMembership(req: Request, res: Response) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {

@@ -1,18 +1,32 @@
 import { Router } from "express";
+import * as authController from "../controllers/authController";
 import * as dashboardController from "../controllers/dashboardController";
 import * as memberController from "../controllers/memberController";
 import * as membershipPlanController from "../controllers/membershipPlanController";
 import * as paymentController from "../controllers/paymentController";
 import * as reportController from "../controllers/reportController";
+import { requireAuth } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validateBody } from "../middleware/validate";
 import {
   createMembershipPlanSchema,
   createPaymentSchema,
+  loginSchema,
   registerMemberSchema,
+  renewMembersSchema,
 } from "../utils/validators";
 
 const router = Router();
+
+router.post(
+  "/auth/login",
+  validateBody(loginSchema),
+  asyncHandler(authController.login)
+);
+router.post("/auth/logout", asyncHandler(authController.logout));
+router.get("/auth/me", asyncHandler(authController.me));
+
+router.use(requireAuth);
 
 router.get("/dashboard", asyncHandler(dashboardController.getDashboard));
 
@@ -43,6 +57,11 @@ router.post(
   "/members",
   validateBody(registerMemberSchema),
   asyncHandler(memberController.createMember)
+);
+router.post(
+  "/members/renew",
+  validateBody(renewMembersSchema),
+  asyncHandler(memberController.renewMembers)
 );
 router.delete(
   "/members/:id",

@@ -9,6 +9,8 @@ export default function ConfirmModal({
   confirmLabel = "Delete",
   cancelLabel = "Cancel",
   confirming = false,
+  confirmClassName = "btn btn-danger",
+  confirmingLabel,
   onConfirm,
   onCancel,
 }: {
@@ -18,6 +20,8 @@ export default function ConfirmModal({
   confirmLabel?: string;
   cancelLabel?: string;
   confirming?: boolean;
+  confirmClassName?: string;
+  confirmingLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -76,11 +80,13 @@ export default function ConfirmModal({
           </button>
           <button
             type="button"
-            className="btn btn-danger"
+            className={confirmClassName}
             onClick={onConfirm}
             disabled={confirming}
           >
-            {confirming ? "Deleting..." : confirmLabel}
+            {confirming
+              ? confirmingLabel || "Working..."
+              : confirmLabel}
           </button>
         </div>
       </div>

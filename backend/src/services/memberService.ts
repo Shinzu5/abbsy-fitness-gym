@@ -3,9 +3,11 @@ import { prisma } from "../db/prisma";
 import { AppError } from "../middleware/errorHandler";
 import { MemberWithMembership } from "../types";
 import {
-  addDaysToDate,
+  calculateExpirationDate,
   calculateRemainingDays,
+  formatDateOnly,
   getBusinessDate,
+  membershipStatusFromExpiration,
   toDateOnly,
 } from "../utils/dates";
 import { toMoneyString } from "../utils/money";
@@ -26,17 +28,11 @@ function mapMember(row: {
   }>;
 }): MemberWithMembership {
   const latest = row.memberships[0] ?? null;
-  const expiration = latest
-    ? latest.expirationDate.toISOString().slice(0, 10)
-    : null;
-  const startDate = latest ? latest.startDate.toISOString().slice(0, 10) : null;
+  const expiration = latest ? formatDateOnly(latest.expirationDate) : null;
+  const startDate = latest ? formatDateOnly(latest.startDate) : null;
+  // Days remaining ALWAYS from expirationDateTime - now (never registration date)
   const remaining_days = expiration ? calculateRemainingDays(expiration) : 0;
-
-  let status: "Active" | "Expired" | "None" = "None";
-  if (expiration) {
-    // Remaining 0 means expired (no negative days displayed)
-    status = remaining_days > 0 ? "Active" : "Expired";
-  }
+  const status = membershipStatusFromExpiration(expiration);
 
   return {
     id: row.id,
@@ -120,7 +116,7 @@ export async function registerMember(input: {
     throw new AppError("Invalid registration date", 400);
   }
 
-  const expirationDate = addDaysToDate(startDate, input.duration_days);
+  const expirationDate = calculateExpirationDate(startDate, input.duration_days);
   const startDateValue = toDateOnly(startDate);
   const expirationDateValue = toDateOnly(expirationDate);
   const amountDecimal = new Prisma.Decimal(amount);
@@ -225,6 +221,112 @@ export async function registerMember(input: {
   });
 
   return getMemberById(memberId);
+}
+
+/**
+ * Renew one or more members by adding duration_days onto their current plan.
+ * Active: expiration = current expiration + days
+ * Expired/none: expiration = today + days
+ * Creates one new membership + one payment per member.
+ */
+export async function renewMembers(input: {
+  member_ids: number[];
+  duration_days: number;
+  amount: string;
+}): Promise<MemberWithMembership[]> {
+  const ids = [...new Set(input.member_ids)].filter(
+    (id) => Number.isInteger(id) && id > 0
+  );
+  if (ids.length === 0) {
+    throw new AppError("Select at least one member to renew", 400);
+  }
+  if (![15, 30].includes(input.duration_days)) {
+    throw new AppError("Days must be 15 or 30", 400);
+  }
+
+  const planType = input.duration_days === 30 ? "Monthly" : "15 days";
+  const amountDecimal = new Prisma.Decimal(input.amount);
+  const today = getBusinessDate();
+  const todayValue = toDateOnly(today);
+
+  const results: MemberWithMembership[] = [];
+
+  for (const memberId of ids) {
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      include: {
+        memberships: {
+          orderBy: [{ expirationDate: "desc" }, { id: "desc" }],
+          take: 1,
+          select: { expirationDate: true },
+        },
+      },
+    });
+
+    if (!member) {
+      throw new AppError(`Member not found: ${memberId}`, 404);
+    }
+
+    const latest = member.memberships[0];
+    const currentExp = latest
+      ? formatDateOnly(latest.expirationDate)
+      : null;
+    const remaining = currentExp ? calculateRemainingDays(currentExp) : 0;
+    // Add days onto remaining plan when still active; otherwise start from today
+    const baseDate = remaining > 0 && currentExp ? currentExp : today;
+    const expirationDate = calculateExpirationDate(baseDate, input.duration_days);
+    const expirationDateValue = toDateOnly(expirationDate);
+
+    await prisma.$transaction(async (tx) => {
+      let plan = await tx.membershipPlan.findFirst({
+        where: {
+          type: { equals: planType, mode: "insensitive" },
+          durationDays: input.duration_days,
+          amount: amountDecimal,
+          active: true,
+        },
+        orderBy: { id: "asc" },
+      });
+
+      if (!plan) {
+        plan = await tx.membershipPlan.create({
+          data: {
+            name: planType,
+            type: planType,
+            durationDays: input.duration_days,
+            amount: amountDecimal,
+            active: true,
+          },
+        });
+      }
+
+      await tx.membership.create({
+        data: {
+          memberId: member.id,
+          planId: plan.id,
+          startDate: todayValue,
+          expirationDate: expirationDateValue,
+          amountPaid: amountDecimal,
+        },
+      });
+
+      await tx.payment.create({
+        data: {
+          memberId: member.id,
+          customerName: member.fullName,
+          description: `Membership renewal - ${planType} (${input.duration_days} days)`,
+          amount: amountDecimal,
+          notes: `Membership renewal for ${member.fullName}`,
+          paymentDate: new Date(),
+          status: "OPEN",
+        },
+      });
+    });
+
+    results.push(await getMemberById(member.id));
+  }
+
+  return results;
 }
 
 /**

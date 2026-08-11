@@ -5,6 +5,7 @@ import {
   Payment,
   PaymentStatus,
 } from "../types";
+import { formatDateOnly } from "../utils/dates";
 import { toMoneyString } from "../utils/money";
 
 function asIso(value: Date | string): string {
@@ -13,8 +14,7 @@ function asIso(value: Date | string): string {
 }
 
 function asDateOnly(value: Date | string): string {
-  if (typeof value === "string") return value.slice(0, 10);
-  return value.toISOString().slice(0, 10);
+  return formatDateOnly(value);
 }
 
 function money(value: Prisma.Decimal | string | number): string {

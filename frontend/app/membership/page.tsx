@@ -5,19 +5,68 @@ import Alert from "@/components/Alert";
 import ConfirmModal from "@/components/ConfirmModal";
 import { useLiveData } from "@/components/LiveDataProvider";
 import { api } from "@/lib/api";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, toLocalInputDate } from "@/lib/format";
 import { notifyMembersChanged } from "@/lib/liveSync";
 import type { Member } from "@/types";
 
-const emptyForm = {
+/** Fixed plan type dropdown options. */
+const PLAN_OPTIONS = [
+  { label: "Monthly", value: "Monthly", days: 30 },
+  { label: "15 days", value: "15 days", days: 15 },
+] as const;
+
+const DURATION_OPTIONS = [15, 30] as const;
+
+const emptyForm: {
+  user_name: string;
+  plan_type: string;
+  start_date: string;
+  duration_days: string;
+  amount: string;
+} = {
   user_name: "",
   plan_type: "",
+  start_date: toLocalInputDate(),
   duration_days: "",
   amount: "",
 };
 
+function daysForPlanType(planType: string): number {
+  const match = PLAN_OPTIONS.find((p) => p.value === planType);
+  return match?.days ?? 15;
+}
+
+function planTypeForDays(days: number): string {
+  const match = PLAN_OPTIONS.find((p) => p.days === days);
+  return match?.value ?? PLAN_OPTIONS[0].value;
+}
+
+function addDaysToDate(startDate: string, days: number): string {
+  const date = new Date(`${startDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Monthly (30) = +1 calendar month (7/13 → 8/13). Other durations = +days. */
+function calculateExpirationDate(startDate: string, durationDays: number): string {
+  if (durationDays === 30) {
+    const [year, month, day] = startDate.slice(0, 10).split("-").map(Number);
+    const targetMonthIndex = month - 1 + 1;
+    const targetYear = year + Math.floor(targetMonthIndex / 12);
+    const normalizedMonth = ((targetMonthIndex % 12) + 12) % 12;
+    const lastDay = new Date(
+      Date.UTC(targetYear, normalizedMonth + 1, 0)
+    ).getUTCDate();
+    const clampedDay = Math.min(day, lastDay);
+    return new Date(Date.UTC(targetYear, normalizedMonth, clampedDay))
+      .toISOString()
+      .slice(0, 10);
+  }
+  return addDaysToDate(startDate, durationDays);
+}
+
 export default function MembershipPage() {
-  const { members, loading, error, refresh } = useLiveData();
+  const { members, loading, error, refresh, setMembers } = useLiveData();
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -29,6 +78,13 @@ export default function MembershipPage() {
     () => members.filter((m) => m.membership_id != null),
     [members]
   );
+
+  const expirationPreview = useMemo(() => {
+    const days = Number(form.duration_days);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(form.start_date)) return null;
+    if (!Number.isInteger(days) || days <= 0) return null;
+    return calculateExpirationDate(form.start_date, days);
+  }, [form.start_date, form.duration_days]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -44,8 +100,20 @@ export default function MembershipPage() {
       setActionError("Plan type is required");
       return;
     }
+    if (!form.start_date || !/^\d{4}-\d{2}-\d{2}$/.test(form.start_date)) {
+      setActionError("Start date is required");
+      return;
+    }
+    const startParsed = new Date(`${form.start_date}T00:00:00Z`);
+    if (
+      Number.isNaN(startParsed.getTime()) ||
+      startParsed.toISOString().slice(0, 10) !== form.start_date
+    ) {
+      setActionError("Start date must be a valid date");
+      return;
+    }
     if (!Number.isInteger(days) || days <= 0) {
-      setActionError("Number of days must be a positive whole number");
+      setActionError("Days is required");
       return;
     }
     if (!form.amount || Number(form.amount) <= 0) {
@@ -55,14 +123,20 @@ export default function MembershipPage() {
 
     try {
       setSubmitting(true);
-      await api.createMember({
+      const created = await api.createMember({
         user_name: form.user_name.trim(),
         full_name: form.user_name.trim(),
         plan_type: form.plan_type.trim(),
         duration_days: days,
         amount: form.amount,
+        registration_date: form.start_date,
       });
-      setForm(emptyForm);
+      // Instant Members / Dashboard / bell update (shared LiveDataProvider)
+      setMembers((prev) => {
+        const others = prev.filter((m) => m.id !== created.id);
+        return [created, ...others];
+      });
+      setForm({ ...emptyForm, start_date: toLocalInputDate() });
       await refresh(false);
       notifyMembersChanged();
       setSuccess(
@@ -79,12 +153,31 @@ export default function MembershipPage() {
 
   async function confirmDelete() {
     if (!pendingDelete?.membership_id) return;
+    const target = pendingDelete;
 
     try {
       setDeleting(true);
       setActionError("");
-      await api.deleteMembership(pendingDelete.membership_id);
+      await api.deleteMembership(target.membership_id!);
       setPendingDelete(null);
+      // Instant Dashboard update while API refresh reconciles
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.id === target.id
+            ? {
+                ...m,
+                membership_id: null,
+                plan_name: null,
+                plan_type: null,
+                start_date: null,
+                expiration_date: null,
+                remaining_days: 0,
+                status: "None",
+                amount_paid: null,
+              }
+            : m
+        )
+      );
       await refresh(false);
       notifyMembersChanged();
       setSuccess("Membership deleted. Member and payment history were kept.");
@@ -129,28 +222,65 @@ export default function MembershipPage() {
             </label>
             <label>
               Plan Type
-              <input
+              <select
                 value={form.plan_type}
+                onChange={(e) => {
+                  const plan_type = e.target.value;
+                  setForm((p) => ({
+                    ...p,
+                    plan_type,
+                    duration_days: plan_type
+                      ? String(daysForPlanType(plan_type))
+                      : "",
+                  }));
+                }}
+                required
+              >
+                <option value="" disabled>
+                  Select plan type
+                </option>
+                {PLAN_OPTIONS.map((plan) => (
+                  <option key={plan.value} value={plan.value}>
+                    {plan.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Start Date
+              <input
+                type="date"
+                value={form.start_date}
                 onChange={(e) =>
-                  setForm((p) => ({ ...p, plan_type: e.target.value }))
+                  setForm((p) => ({ ...p, start_date: e.target.value }))
                 }
-                placeholder="Plan type"
                 required
               />
             </label>
             <label>
-              Number of Days
-              <input
-                type="number"
-                min="1"
-                step="1"
+              Days
+              <select
                 value={form.duration_days}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, duration_days: e.target.value }))
-                }
-                placeholder="Days"
+                onChange={(e) => {
+                  const duration_days = e.target.value;
+                  const days = Number(duration_days);
+                  setForm((p) => ({
+                    ...p,
+                    duration_days,
+                    plan_type: duration_days ? planTypeForDays(days) : "",
+                  }));
+                }}
                 required
-              />
+              >
+                <option value="" disabled>
+                  Select days
+                </option>
+                {DURATION_OPTIONS.map((days) => (
+                  <option key={days} value={days}>
+                    {days} days
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Amount
@@ -164,6 +294,18 @@ export default function MembershipPage() {
                 }
                 placeholder="Amount"
                 required
+              />
+            </label>
+            <label>
+              Expiration
+              <input
+                type="text"
+                value={
+                  expirationPreview ? formatDate(expirationPreview) : "—"
+                }
+                readOnly
+                tabIndex={-1}
+                aria-live="polite"
               />
             </label>
           </div>

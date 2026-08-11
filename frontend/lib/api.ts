@@ -3,6 +3,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(options?.headers || {}),
@@ -22,6 +23,17 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (body: { username: string; password: string }) =>
+    request<{ id: number; username: string; token: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  logout: () =>
+    request<{ ok: true }>("/auth/logout", {
+      method: "POST",
+    }),
+  me: () => request<{ id: number; username: string }>("/auth/me"),
+
   getDashboard: () => request<import("@/types").DashboardStats>("/dashboard"),
 
   getTodayPayments: () =>
@@ -65,7 +77,7 @@ export const api = {
     duration_days: number;
     amount: string;
     contact_number?: string;
-    registration_date?: string;
+    registration_date: string;
   }) =>
     request<import("@/types").Member>("/members", {
       method: "POST",
@@ -78,6 +90,15 @@ export const api = {
       full_name: string;
       memberships_deleted: number;
     }>(`/members/${id}`, { method: "DELETE" }),
+  renewMembers: (body: {
+    member_ids: number[];
+    duration_days: number;
+    amount: string;
+  }) =>
+    request<import("@/types").Member[]>("/members/renew", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   deleteMembership: (id: number) =>
     request<{ deleted: true; membership_id: number; member_id: number }>(
       `/memberships/${id}`,

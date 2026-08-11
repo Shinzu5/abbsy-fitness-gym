@@ -13,8 +13,9 @@ export type CountdownParts = {
 export type LiveMembershipStatus = "Active" | "ExpiringSoon" | "Expired" | "None";
 
 /**
- * Expiration instant for a DATE-only expiration_date.
- * Matches backend remaining-days logic: expired at start of the expiration calendar day (Asia/Manila).
+ * Expiration instant for a DATE-only expiration_date (Asia/Manila).
+ * remainingTime = expirationDateTime - currentDateTime
+ * (same formula as backend Days Remaining / status)
  */
 export function getExpirationInstant(
   expirationDate: string | null | undefined
@@ -66,13 +67,16 @@ export function formatCountdown(parts: CountdownParts): string {
   return `${parts.days} days ${pad2(parts.hours)} hours ${pad2(parts.minutes)} minutes ${pad2(parts.seconds)} seconds`;
 }
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
 export function getLiveMembershipStatus(
   expirationDate: string | null | undefined,
   now: Date = new Date()
 ): LiveMembershipStatus {
   if (!expirationDate) return "None";
   const parts = getCountdownParts(expirationDate, now);
-  if (parts.expired) return "Expired";
-  if (parts.days <= 5) return "ExpiringSoon";
-  return "Active";
+  if (parts.expired || parts.totalMs <= 0) return "Expired";
+  // Same thresholds as backend: >5 days Active, else ExpiringSoon while >0
+  if (parts.totalMs > 5 * MS_PER_DAY) return "Active";
+  return "ExpiringSoon";
 }

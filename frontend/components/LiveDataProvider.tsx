@@ -40,8 +40,11 @@ type LiveDataContextValue = {
   loading: boolean;
   error: string;
   refresh: (showLoading?: boolean) => Promise<void>;
+  /** Instant local update after create/delete (then refresh reconciles from API). */
+  setMembers: (updater: Member[] | ((prev: Member[]) => Member[])) => void;
   activeMembers: number;
   expiredMembers: number;
+  activeMembershipPlans: number;
   expiringNotifications: ExpiringNotification[];
 };
 
@@ -104,14 +107,26 @@ export default function LiveDataProvider({
     return () => window.clearInterval(id);
   }, []);
 
-  const { activeMembers, expiredMembers, expiringNotifications } = useMemo(() => {
+  const {
+    activeMembers,
+    expiredMembers,
+    activeMembershipPlans,
+    expiringNotifications,
+  } = useMemo(() => {
     let active = 0;
     let expired = 0;
+    const activePlanKeys = new Set<string>();
     const notifications: ExpiringNotification[] = [];
 
     for (const member of members) {
       const status = getLiveMembershipStatus(member.expiration_date, now);
-      if (status === "Active" || status === "ExpiringSoon") active += 1;
+      if (status === "Active" || status === "ExpiringSoon") {
+        active += 1;
+        const planKey = [member.plan_type, member.plan_name]
+          .filter(Boolean)
+          .join("|");
+        if (planKey) activePlanKeys.add(planKey);
+      }
       if (status === "Expired") expired += 1;
 
       if (status === "ExpiringSoon" && member.expiration_date) {
@@ -133,6 +148,7 @@ export default function LiveDataProvider({
     return {
       activeMembers: active,
       expiredMembers: expired,
+      activeMembershipPlans: activePlanKeys.size,
       expiringNotifications: notifications,
     };
   }, [members, now]);
@@ -142,16 +158,19 @@ export default function LiveDataProvider({
       members,
       stats: {
         ...stats,
-        // Keep dashboard member cards in sync with live membership status
+        // Keep dashboard cards in sync with live membership status (no stale catalog counts)
         active_members: activeMembers,
         expired_members: expiredMembers,
+        active_membership_plans: activeMembershipPlans,
       },
       now,
       loading,
       error,
       refresh,
+      setMembers,
       activeMembers,
       expiredMembers,
+      activeMembershipPlans,
       expiringNotifications,
     }),
     [
@@ -163,6 +182,7 @@ export default function LiveDataProvider({
       refresh,
       activeMembers,
       expiredMembers,
+      activeMembershipPlans,
       expiringNotifications,
     ]
   );
