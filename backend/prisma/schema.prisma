@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Matches existing table: membership_plans
+model MembershipPlan {
+  id           Int          @id @default(autoincrement())
+  name         String       @db.VarChar(150)
+  type         String       @db.VarChar(100)
+  durationDays Int          @map("duration_days")
+  amount       Decimal      @db.Decimal(12, 2)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  active       Boolean      @default(true)
+  memberships  Membership[]
+
+  @@map("membership_plans")
+}
+
+/// Matches existing table: members
+model Member {
+  id            Int          @id @default(autoincrement())
+  fullName      String       @map("full_name") @db.VarChar(200)
+  contactNumber String       @map("contact_number") @db.VarChar(50)
+  registeredAt  DateTime     @default(now()) @map("registered_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  memberships   Membership[]
+  payments      Payment[]
+
+  @@index([fullName], map: "idx_members_full_name")
+  @@map("members")
+}
+
+/// Matches existing table: memberships
+model Membership {
+  id             Int            @id @default(autoincrement())
+  memberId       Int            @map("member_id")
+  planId         Int            @map("plan_id")
+  startDate      DateTime       @map("start_date") @db.Date
+  expirationDate DateTime       @map("expiration_date") @db.Date
+  amountPaid     Decimal        @map("amount_paid") @db.Decimal(12, 2)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member         Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  plan           MembershipPlan @relation(fields: [planId], references: [id])
+
+  @@index([memberId], map: "idx_memberships_member_id")
+  @@index([expirationDate], map: "idx_memberships_expiration_date")
+  @@map("memberships")
+}
+
+/// Matches existing table: payments (status remains VARCHAR, not a PG enum)
+model Payment {
+  id            Int               @id @default(autoincrement())
+  memberId      Int?              @map("member_id")
+  customerName  String            @map("customer_name") @db.VarChar(200)
+  description   String
+  amount        Decimal           @db.Decimal(12, 2)
+  notes         String?
+  paymentDate   DateTime          @default(now()) @map("payment_date") @db.Timestamptz(6)
+  status        String            @default("OPEN") @db.VarChar(20)
+  dailyReportId Int?              @map("daily_report_id")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member        Member?           @relation(fields: [memberId], references: [id], onDelete: SetNull)
+  dailyReport   DailySalesReport? @relation(fields: [dailyReportId], references: [id], onDelete: SetNull)
+
+  @@index([status, paymentDate], map: "idx_payments_status_payment_date")
+  @@index([dailyReportId], map: "idx_payments_daily_report_id")
+  @@map("payments")
+}
+
+/// Matches existing table: daily_sales_reports
+model DailySalesReport {
+  id               Int       @id @default(autoincrement())
+  reportDate       DateTime  @map("report_date") @db.Date
+  totalSales       Decimal   @default(0) @map("total_sales") @db.Decimal(12, 2)
+  transactionCount Int       @default(0) @map("transaction_count")
+  closedAt         DateTime  @default(now()) @map("closed_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payments         Payment[]
+
+  @@index([reportDate(sort: Desc)], map: "idx_daily_sales_reports_report_date")
+  @@map("daily_sales_reports")
+}
