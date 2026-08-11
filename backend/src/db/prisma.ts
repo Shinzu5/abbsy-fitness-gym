@@ -1,19 +1,27 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import dotenv from "dotenv";
+import { normalizeDatabaseUrl } from "./databaseUrl";
 
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL;
+const rawConnectionString = process.env.DATABASE_URL;
 
-if (!connectionString || connectionString === "PUT_NEON_CONNECTION_STRING_HERE") {
+if (
+  !rawConnectionString ||
+  rawConnectionString === "PUT_NEON_CONNECTION_STRING_HERE"
+) {
   console.warn(
-    "[db] DATABASE_URL is not configured. Set it in backend/.env before using the API."
+    "[db] DATABASE_URL is not configured. Set it in backend/.env (or Render env vars)."
   );
 }
 
+const connectionString = rawConnectionString
+  ? normalizeDatabaseUrl(rawConnectionString)
+  : undefined;
+
 const adapter = new PrismaPg({
-  connectionString: connectionString || undefined,
+  connectionString,
 });
 
 export const prisma = new PrismaClient({

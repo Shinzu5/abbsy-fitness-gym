@@ -2,6 +2,7 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import dotenv from "dotenv";
 import express from "express";
+import { getDatabaseHost } from "./db/databaseUrl";
 import { prisma } from "./db/prisma";
 import { errorHandler } from "./middleware/errorHandler";
 import routes from "./routes";
@@ -46,17 +47,20 @@ async function start() {
 
   if (!databaseUrl || databaseUrl === "PUT_NEON_CONNECTION_STRING_HERE") {
     console.error(
-      "DATABASE_URL is missing. Set your Neon connection string in backend/.env"
+      "DATABASE_URL is missing. Set your Neon connection string in Render Environment variables."
     );
     process.exit(1);
   }
 
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 16) {
     console.error(
-      "SESSION_SECRET is missing or too short. Set a long secret in backend/.env"
+      "SESSION_SECRET is missing or too short. Set a long secret in Render Environment variables."
     );
     process.exit(1);
   }
+
+  const dbHost = getDatabaseHost(databaseUrl);
+  console.log(`Connecting to database host: ${dbHost}`);
 
   try {
     await prisma.$connect();
@@ -64,6 +68,9 @@ async function start() {
     console.log("Connected to Neon PostgreSQL via Prisma.");
   } catch (err) {
     console.error("Failed to connect to database via Prisma:", err);
+    console.error(
+      `Check Render DATABASE_URL. Expected a Neon pooled URL (host contains "-pooler"). Current host: ${dbHost}`
+    );
     process.exit(1);
   }
 

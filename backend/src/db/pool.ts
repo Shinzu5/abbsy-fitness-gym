@@ -1,15 +1,20 @@
 import { Pool } from "pg";
 import dotenv from "dotenv";
+import { normalizeDatabaseUrl } from "./databaseUrl";
 
 dotenv.config();
 
-const databaseUrl = process.env.DATABASE_URL;
+const rawDatabaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl || databaseUrl === "PUT_NEON_CONNECTION_STRING_HERE") {
+if (!rawDatabaseUrl || rawDatabaseUrl === "PUT_NEON_CONNECTION_STRING_HERE") {
   console.warn(
     "[db] DATABASE_URL is not configured. Set it in backend/.env before using the API."
   );
 }
+
+const databaseUrl = rawDatabaseUrl
+  ? normalizeDatabaseUrl(rawDatabaseUrl)
+  : undefined;
 
 export const pool = new Pool({
   connectionString: databaseUrl,
