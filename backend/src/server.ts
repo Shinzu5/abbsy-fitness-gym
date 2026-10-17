@@ -11,12 +11,23 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
-const frontendOrigins = (
-  process.env.FRONTEND_ORIGIN || "http://localhost:3000,http://localhost:3001"
-)
+
+// Always allowed, even if FRONTEND_ORIGIN is missing or misconfigured on Render.
+// FRONTEND_ORIGIN entries are merged on top of these instead of replacing them.
+const DEFAULT_FRONTEND_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "https://abbsy-fitness-gym.vercel.app",
+];
+
+const configuredOrigins = (process.env.FRONTEND_ORIGIN || "")
   .split(",")
   .map((o) => o.trim())
   .filter(Boolean);
+
+const frontendOrigins = Array.from(
+  new Set([...DEFAULT_FRONTEND_ORIGINS, ...configuredOrigins])
+);
 
 app.use(
   cors({
