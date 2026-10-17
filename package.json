@@ -1,0 +1,15 @@
+{
+  "name": "abbsy-fitness-gym",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo root. Next.js app lives in frontend/, Express API in backend/.",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend run start",
+    "lint": "npm --prefix frontend run lint"
+  },
+  "dependencies": {
+    "next": "^14.2.35"
+  }
+}
